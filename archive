@@ -6,6 +6,7 @@ use autodie;
 use WWW::Mechanize;
 use Config::Tiny;
 use FindBin qw($Bin);
+use utf8::all;
 
 use constant DEFAULT_ARCHIVE => "$Bin/messages";
 
@@ -14,11 +15,6 @@ use constant DEFAULT_ARCHIVE => "$Bin/messages";
 my $thread      = shift;
 my $archive_dir = shift || DEFAULT_ARCHIVE;
 
-# Switch to https if not already specified.
-$thread =~ s{http:}{https:};
-
-my ($thread_id) = ($thread =~ m{threadid=(\d+)});
-
 # Make sure archive exists
 
 if (not -d $archive_dir) {
@@ -26,77 +22,164 @@ if (not -d $archive_dir) {
     mkdir $archive_dir;
 }
 
-my $mech = WWW::Mechanize->new;
+my $mech = WWW::Mechanize::OKC->new(
+    autocheck => 1,
+    stack_depth => 0,
+);
 
 # Let's make sure OKC returns code similar to what I'll see in
 # Firefox.  (Also let's not be quite so obviously a bot...)
 
 $mech->agent_alias('Linux Mozilla');
 
-# TODO: Maybe use XDG paths?
-my $config = Config::Tiny->read("$Bin/auth.ini");
+# Login...
+$mech->login;
 
-unless ($config->{auth}{username}) {
-    say "Hey, you need a `$Bin/auth.ini` file that looks like this:\n";
-    say "[auth]\n",
-        "username=your_username\n",
-        "password=your_password\n"
-    ;
-    exit 1;
+if ($thread eq '-a') {
+    say "Finding threads...";
+    my @threads = $mech->mailbox;
+
+    foreach my $thread (@threads) {
+        $mech->backup($thread);
+    }
+}
+else {
+    $mech->backup($thread);
 }
 
-# Login dance!
+### Extended Mechanize class for OKC
 
-$mech->get("https://www.okcupid.com/login");
+package WWW::Mechanize::OKC;
 
-$mech->submit_form(
-    form_id   => 'login_form',
-    fields    => {
-        username => $config->{auth}{username},
-        password => $config->{auth}{password},
-    },
-);
+use parent 'WWW::Mechanize';
+use FindBin qw($Bin);
+use autodie;
 
-# Fetch the message thread specified
-$mech->get($thread);
+sub login {
+    my ($mech) = @_;
 
-my $content = $mech->content;
+    # TODO: Maybe use XDG paths?
+    my $config = Config::Tiny->read("$Bin/auth.ini");
 
-my ($remote_user) = ($content =~ m{Your conversation with (\w+)});
+    unless ($config->{auth}{username}) {
+        say "Hey, you need a `$Bin/auth.ini` file that looks like this:\n";
+        say "[auth]\n",
+            "username=your_username\n",
+            "password=your_password\n"
+        ;
+        exit 1;
+    }
 
-$remote_user or die "Oh noes! I don't know who this convo is with...\n";
+    # Login dance!
 
-open(my $fh, '>', File::Spec->catfile($archive_dir, "$remote_user.$thread_id"));
+    say "Logging in...";
 
-# Double-lines of output? Such ugly!
+    $mech->get("https://www.okcupid.com/login");
 
-say       "=== Conversation with $remote_user ($thread_id) ===\n";
-say {$fh} "=== Conversation with $remote_user ($thread_id) ===\n";
+    $mech->submit_form(
+        form_id   => 'login_form',
+        fields    => {
+            username => $config->{auth}{username},
+            password => $config->{auth}{password},
+        },
+    );
 
-# We started off trying to use XPath, but OKC doens't exactly return
-# well-formed XML. Instead, we'll use hacks...
+    return;
+}
 
-while ($content =~ m{
-    <a[^>]*href="/profile/(?<from>\w+)[^"]*"[^>]*class="photo"
-    .*?
-    <div\s*class="message"[^>]*>(?<content>.*?)</div>\s*</li>
-}msgx) {
+sub mailbox {
+    my ($mech) = @_;
 
-    my $from = $+{from};
-    my $msg  = $+{content};
+    my $page = 0;
 
-    # Convert HTML to plain text... mostly.
+    my @threads;
 
-    $msg =~ s{<div class="message_body">}{\n}msg;
-    $msg =~ s{<script>.*?</script>}{}msg;
-    $msg =~ s{</?(?:br|div)[^>]*/?>}{\n}msg;
-    $msg =~ s{</?span[^>]*>}{}msg;
-    $msg =~ s{<a [^>]*>}{}msg;
-    $msg =~ s{</a>}{}msg;
-    $msg =~ s{^[ ]*}{}msg;
+    # Ugh. Magic loops.
+    while (1) {
 
-    # Print our message.
+        # Ugh. Magic numbers
+        my $start = 1 + ($page++ * 30);
 
-    say {$fh} "[$from]\n$msg";
-    say {$fh} "-" x 70;
+        # Ugh. Magic strings
+        my $inbox = "http://www.okcupid.com/messages?low=$start&infiniscroll=1&folder=1";
+
+        $mech->get($inbox);
+
+        my $content = $mech->content;
+
+        # Break out if content is empty!
+        last if ($content =~ /^\s*$/);
+
+        # Sweet! We have more mailbox. Parse it!
+
+        while ($content =~ m{
+            <a[^>]*href="/profile/(?<from>[^"?]+)[^"]*"[^>]*class="photo"
+            .*?
+            <a\s*class="open"\s*href="(?<url>/messages[^"]*)"
+        }msxg) {
+            my $from = $+{from};
+            my $url  = $+{url};
+            $url =~ s{&amp;}{&}g;
+
+            say $from;
+
+            push(@threads, $url);
+        }
+    }
+
+    # Here! Have some threads!
+    return @threads;
+}
+
+sub backup {
+    my ($mech, $thread) = @_;
+
+    # Switch to https if not already specified.
+    $thread =~ s{http:}{https:};
+
+    my ($thread_id) = ($thread =~ m{threadid=(\d+)});
+
+    # Fetch the message thread specified
+    $mech->get($thread);
+
+    my $content = $mech->content;
+
+    my ($remote_user) = ($content =~ m{Your conversation with ([^"]+)});
+
+    $remote_user or die "Oh noes! I don't know who this convo is with...\n";
+
+    open(my $fh, '>', File::Spec->catfile($archive_dir, "$remote_user.$thread_id"));
+
+    # Double-lines of output? Such ugly!
+
+    say       "=== Conversation with $remote_user ($thread_id) ===\n";
+    say {$fh} "=== Conversation with $remote_user ($thread_id) ===\n";
+
+    # We started off trying to use XPath, but OKC doens't exactly return
+    # well-formed XML. Instead, we'll use hacks...
+
+    while ($content =~ m{
+        <a[^>]*href="/profile/(?<from>[^"?]+)[^"]*"[^>]*class="photo"
+        .*?
+        <div\s*class="message"[^>]*>(?<content>.*?)</div>\s*</li>
+    }msgx) {
+
+        my $from = $+{from};
+        my $msg  = $+{content};
+
+        # Convert HTML to plain text... mostly.
+
+        $msg =~ s{<div class="message_body">}{\n}msg;
+        $msg =~ s{<script>.*?</script>}{}msg;
+        $msg =~ s{</?(?:br|div)[^>]*/?>}{\n}msg;
+        $msg =~ s{</?span[^>]*>}{}msg;
+        $msg =~ s{<a [^>]*>}{}msg;
+        $msg =~ s{</a>}{}msg;
+        $msg =~ s{^[ ]*}{}msg;
+
+        # Print our message.
+
+        say {$fh} "[$from]\n$msg";
+        say {$fh} "-" x 70;
+    }
 }

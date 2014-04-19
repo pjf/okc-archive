@@ -12,22 +12,23 @@ This is a simple script which lets you scrape an OKC conversation.
         username=your_username
         password=your_password
 
-2. Run `./archive URL_TO_CONVERSATION`
+2. Run either `./archive URL_TO_CONVERSATION` to archive a single
+conversation, or `./archive -a` to archive *all your conversations*.
 
-3. Celebrate! The `messages/` directory will have a file with your
-conversation it! It will be named after the user you're talking to,
+3. Celebrate! The `messages/` directory will contain your conversations!
+They will be named after the user you're talking to,
 and contain the thread ID from the URL.
 
 ## Future
 
-This would be even better if it auto-detected all
-your conversations and archived them automatically.
+The code could do with refactoring. And tests. And quality control.
 
 ## Dependencies
 
 * Perl (5.10.0 or later)
 * Config::Tiny
 * WWW::Mechanize
+* utf8::all
 
 ## LICENSE
 
