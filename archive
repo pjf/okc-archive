@@ -45,13 +45,10 @@ $mech->submit_form(
     },
 );
 
-
 # Fetch the message thread specified
 $mech->get($thread);
 
 my $content = $mech->content;
-
-# say $content;
 
 # We started off trying to use XPath, but OKC doens't exactly return
 # well-formed XML. Instead, we'll use hacks...
@@ -65,6 +62,8 @@ while ($content =~ m{
     my $from = $+{from};
     my $msg  = $+{content};
 
+    # Convert HTML to plain text... mostly.
+
     $msg =~ s{<div class="message_body">}{\n}msg;
     $msg =~ s{<script>.*?</script>}{}msg;
     $msg =~ s{</?(?:br|div)[^>]*/?>}{\n}msg;
@@ -73,27 +72,8 @@ while ($content =~ m{
     $msg =~ s{</a>}{}msg;
     $msg =~ s{^[ ]*}{}msg;
 
+    # Print our message.
+
     say "[$from]\n$msg";
     say "-" x 70;
 }
-
-__END__
-
-# Burn the contents of various sections that may contain malformed
-# XML.
-
-$content =~ s{<head>.*?</head>}{<head></head>}sm;
-$content =~ s{<script[^>]*>.*?</script>}{}smg;
-$content =~ s{&rsquo;}{'}smg;
-$content =~ s{&raquo;}{'}smg;
-$content =~ s{&hellip;}{...}smg;
-
-# Now extract the thread
-
-say $content;
-
-__END__
-
-my $xp = XML::XPath->new(xml => $content);
-
-say $xp->findnodes_as_string(q{//ul[@id='thread'});
