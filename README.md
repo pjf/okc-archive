@@ -12,14 +12,15 @@ This is a simple script which lets you scrape an OKC conversation.
         username=your_username
         password=your_password
 
-2. Run `./archive URL_TO_CONVERSATION > somefile.txt`
+2. Run `./archive URL_TO_CONVERSATION`
 
-3. Celebrate! `somefile.txt` now has your conversation inside it.
+3. Celebrate! The `messages/` directory will have a file with your
+conversation it! It will be named after the user you're talking to,
+and contain the thread ID from the URL.
 
 ## Future
 
-It sure would be lovely if this would auto-name output files
-(eg: username.thread_id), and even better if it auto-detected all
+This would be even better if it auto-detected all
 your conversations and archived them automatically.
 
 ## Dependencies

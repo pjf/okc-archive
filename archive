@@ -7,14 +7,24 @@ use WWW::Mechanize;
 use Config::Tiny;
 use FindBin qw($Bin);
 
-@ARGV or die "Usage: $0 thread-url\n";
+use constant DEFAULT_ARCHIVE => "$Bin/messages";
 
-my $thread = shift @ARGV;
+@ARGV or die "Usage: $0 thread-url [archive-dir]\n";
+
+my $thread      = shift;
+my $archive_dir = shift || DEFAULT_ARCHIVE;
 
 # Switch to https if not already specified.
 $thread =~ s{http:}{https:};
 
 my ($thread_id) = ($thread =~ m{threadid=(\d+)});
+
+# Make sure archive exists
+
+if (not -d $archive_dir) {
+    say "Creating $archive_dir...";
+    mkdir $archive_dir;
+}
 
 my $mech = WWW::Mechanize->new;
 
@@ -56,9 +66,12 @@ my ($remote_user) = ($content =~ m{Your conversation with (\w+)});
 
 $remote_user or die "Oh noes! I don't know who this convo is with...\n";
 
-say "=== Conversation with $remote_user ($thread_id) ===\n";
+open(my $fh, '>', File::Spec->catfile($archive_dir, "$remote_user.$thread_id"));
 
-# say $content;
+# Double-lines of output? Such ugly!
+
+say       "=== Conversation with $remote_user ($thread_id) ===\n";
+say {$fh} "=== Conversation with $remote_user ($thread_id) ===\n";
 
 # We started off trying to use XPath, but OKC doens't exactly return
 # well-formed XML. Instead, we'll use hacks...
@@ -84,6 +97,6 @@ while ($content =~ m{
 
     # Print our message.
 
-    say "[$from]\n$msg";
-    say "-" x 70;
+    say {$fh} "[$from]\n$msg";
+    say {$fh} "-" x 70;
 }
