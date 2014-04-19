@@ -8,9 +8,9 @@ This is a simple script which lets you scrape an OKC conversation.
 
 1. Make yourself an `auth.ini` file that looks like this:
 
-    [auth]
-    username=your_username
-    password=your_password
+        [auth]
+        username=your_username
+        password=your_password
 
 2. Run `./archive URL_TO_CONVERSATION > somefile.txt`
 
